@@ -1,10 +1,10 @@
 # Googly Fonts API
 
-A small Express API that returns font family names from Google Fonts.
+A small Express API for getting font family names from Google Fonts.
 
 ## Setup
 
-Requires Node.js 22 or newer and npm.
+To get started, use Node.js 22 or newer with npm:
 
 ```sh
 npm ci
@@ -23,9 +23,12 @@ npm start
 | `API_KEY` | Required server-side Google Fonts API key. |
 | `PORT` | Optional integer from 1 to 65535; defaults to 3000 when absent or empty. |
 
-Missing or blank required values, an invalid URL, or an invalid port stop
-startup with a nonzero exit code. Keep `.env` untracked and never put real
-credentials in source code.
+The server checks these settings before starting. If a required value is
+missing or blank, or the URL or port needs attention, it exits with a nonzero
+code and a message to help you update the configuration.
+
+You can keep your API key in `.env`, which is ignored by Git, or provide it
+through your environment.
 
 ## Endpoints
 
@@ -35,7 +38,7 @@ credentials in source code.
 curl 'http://localhost:3000/?limit=2&sort=popularity'
 ```
 
-Example response (font ordering depends on Google):
+Here's an example response. The font order comes from Google:
 
 ```json
 {
@@ -47,25 +50,29 @@ Example response (font ordering depends on Google):
 ```
 
 - `limit`: from 1 to 100; missing, invalid, or out-of-range values default to 5.
-  Existing `parseInt` behavior is retained: `2abc` and `2.5` both become 2.
+  Limits are read as integers, so values such as `2abc` and `2.5` become 2.
 - `sort`: `popularity`, `alpha`, `date`, or `trending`; defaults to `popularity`
   for missing or unsupported values.
-- `count` reflects returned fonts, which can be fewer than `limit`.
-  An empty upstream catalog returns an empty `fonts` array and count 0.
+- `count` tells you how many fonts were returned. This may be fewer than
+  `limit`; an empty catalog returns an empty `fonts` array and count 0.
 
-Each request fetches Google Fonts; there is no cache or retry. A 10-second
-timeout covers both fetching and reading the upstream JSON body. Invalid
-catalogs (including missing or empty family names), network failures, invalid
-JSON, upstream HTTP failures, and timeouts return HTTP 500. Error responses and
-logs do not include API keys or raw upstream exception details.
+Font results are fetched from Google for each request, without caching or
+automatic retries. A 10-second timeout covers fetching and reading the JSON
+response, so a stalled upstream request doesn't leave callers waiting.
 
-Invalid catalogs return:
+If Google is unavailable, the request times out, or its response can't be used,
+the API returns HTTP 500 with one of the messages below. This includes invalid
+JSON and catalogs with missing or empty family names. Error responses use short
+messages, while logs record failure categories and available HTTP status codes
+rather than raw upstream exception details.
+
+For an unusable font catalog:
 
 ```json
 { "error": "Invalid response from Google Fonts API" }
 ```
 
-Other upstream failures return:
+For other upstream request failures:
 
 ```json
 {
@@ -76,12 +83,14 @@ Other upstream failures return:
 
 ### `GET /health`
 
-Returns `{"status":"OK","timestamp":"<ISO timestamp>"}`. This is a liveness
-check, not a Google connectivity/readiness check. It does not contact Google
-and is unavailable if configuration prevents startup.
+Returns `{"status":"OK","timestamp":"<ISO timestamp>"}` to confirm the server
+is running. The check responds locally rather than contacting Google, so it
+doesn't indicate Google's availability. As with the other endpoints, the
+server needs to start successfully before this check is available.
 
 Unknown endpoints return HTTP 404 with `{"error":"Endpoint not found"}`.
-CORS remains permissive (`Access-Control-Allow-Origin: *`).
+Browser requests from any origin are currently allowed
+(`Access-Control-Allow-Origin: *`).
 
 ## Development
 
@@ -89,8 +98,9 @@ CORS remains permissive (`Access-Control-Allow-Origin: *`).
 npm test
 ```
 
-Tests use Node's built-in test runner, stubbed fetches, and local HTTP servers.
-They do not use real credentials, call Google, or load the real `.env`.
+The tests run with Node's built-in test runner, stubbed fetches, and local HTTP
+servers. They use test data rather than real credentials, Google requests, or
+your `.env` file.
 
 `app.js` exports `createApp({ fetchFonts, logger })` without starting a server.
 `server.js` loads environment configuration and starts listening. Configuration,
