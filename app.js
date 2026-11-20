@@ -1,88 +1,62 @@
 const express = require('express')
 const cors = require('cors')
-require('dotenv').config()
 
-const app = express()
-const PORT = process.env.PORT || 3000
+const { GoogleFontsError } = require('./services/googleFonts')
+const { validateLimit, validateSort } = require('./utils/queryValidation')
 
-// Middleware
-app.use(cors())
-app.use(express.json())
+const createApp = ({ fetchFonts, logger = console }) => {
+  const app = express()
 
-// Validation helpers
-const validateLimit = (limit) => {
-  const num = parseInt(limit, 10)
-  return isNaN(num) || num < 1 || num > 100 ? 5 : num
-}
+  app.use(cors())
+  app.use(express.json())
 
-const validateSort = (sort) => {
-  const validSorts = ['popularity', 'alpha', 'date', 'trending']
-  return validSorts.includes(sort) ? sort : 'popularity'
-}
+  app.get('/', async (req, res, next) => {
+    try {
+      const limit = validateLimit(req.query.limit)
+      const sortBy = validateSort(req.query.sort)
+      const data = await fetchFonts(sortBy)
 
-// Google Fonts API service
-const fetchGoogleFonts = async (sortBy) => {
-  const { API_BASE_URL, API_KEY } = process.env
+      const fontFamilies = data.items.map((item) => item.family).slice(0, limit)
 
-  if (!API_BASE_URL || !API_KEY) {
-    throw new Error('Missing required environment variables: API_BASE_URL or API_KEY')
-  }
+      res.json({
+        fonts: fontFamilies,
+        count: fontFamilies.length,
+        limit,
+        sortBy,
+      })
+    } catch (error) {
+      if (!(error instanceof GoogleFontsError)) {
+        return next(error)
+      }
 
-  const response = await fetch(`${API_BASE_URL}?key=${API_KEY}&sort=${sortBy}`)
-
-  if (!response.ok) {
-    throw new Error(`Google Fonts API error: ${response.status} ${response.statusText}`)
-  }
-
-  return response.json()
-}
-
-// Routes
-app.get('/', async (req, res) => {
-  try {
-    const limit = validateLimit(req.query.limit)
-    const sortBy = validateSort(req.query.sort)
-
-    const data = await fetchGoogleFonts(sortBy)
-
-    if (!data.items || !Array.isArray(data.items)) {
-      return res.status(500).json({ error: 'Invalid response from Google Fonts API' })
+      logger.error('Error fetching fonts:', {
+        category: error.category,
+        status: error.status,
+      })
+      if (error.category === 'invalid-catalog') {
+        return res.status(500).json({ error: 'Invalid response from Google Fonts API' })
+      }
+      res.status(500).json({
+        error: 'Failed to fetch fonts',
+        message: 'Unable to retrieve fonts. Please try again.',
+      })
     }
+  })
 
-    const fontFamilies = data.items.map((item) => item.family).slice(0, limit)
+  app.get('/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date().toISOString() })
+  })
 
-    res.json({
-      fonts: fontFamilies,
-      count: fontFamilies.length,
-      limit,
-      sortBy,
-    })
-  } catch (error) {
-    console.error('Error fetching fonts:', error.message)
-    res.status(500).json({
-      error: 'Failed to fetch fonts',
-      message: error.message,
-    })
-  }
-})
+  app.use('*', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' })
+  })
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() })
-})
+  app.use((_error, _req, res, _next) => {
+    logger.error('Unhandled request error')
+    res.status(500).json({ error: 'Internal server error' })
+  })
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' })
-})
+  return app
+}
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error)
-  res.status(500).json({ error: 'Internal server error' })
-})
-
-app.listen(PORT, () => {
-  console.log(`🚀 Google Fonts API server running on port ${PORT}`)
-  console.log(`📍 Health check: http://localhost:${PORT}/health`)
-})
+module.exports = { createApp }
